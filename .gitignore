@@ -4,3 +4,5 @@
 .env.dev
 env/
 venv/
+*.pyc
+*.xml

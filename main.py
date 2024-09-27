@@ -1,12 +1,9 @@
 import asyncio
-import aiohttp
-import websockets
-import json
 import logging
 import os
 import utils
 
-from datetime import datetime, timedelta
+from decimal import Decimal
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import CommandHandler, Application, CallbackContext
@@ -21,7 +18,10 @@ BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET')
 
 # 로깅 설정
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # 포지션 정보 저장
@@ -29,28 +29,35 @@ ps = {}
 
 
 async def process_message(msg, application):
-    if msg['e'] == 'ORDER_TRADE_UPDATE':
-        order = msg['o']
-        if order['x'] in ['TRADE', 'NEW', 'FILLED']:
-            # update
-            ps[order['s']] = {
-                'positionAmt': order['z'],
-                'entryPrice': order['Z'],
-                'unRealizedProfit': order['up']
-            }
+    if msg['e'] == 'ACCOUNT_UPDATE':
+        account = msg['a']
+        for position in account['P']:
+            if float(position['pa']) != 0:
+                # position 변화가 생겼을 때
+                if ps[position['s']]['positionAmt'] != position['pa']:
 
-            message = (
-                f"Order Update:\n"
-                f"Symbol: {order['s']}\n"
-                f"Quantity: {order['q']}\n"
-                f"Realized Profit: {order['rp']}"
-            )
-            logger.info(message)
+                    entry_price = Decimal(position['ep']).quantize(Decimal('0.00000001'))
+                    unrealized_profit = Decimal(position['up']).quantize(Decimal('1'))
 
-            try:
-                await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-            except Exception as e:
-                logger.error(f"Error sending message: {e}")
+                    message = (
+                        f"포지션 변화 감지\n"
+                        f"포지션: {utils.long_or_short(position['pa'])}\n"
+                        f"포지션 수량: {position['pa']}\n"
+                        f"진입 가격: {entry_price}\n"
+                        f"미실현 손익: {unrealized_profit}\n"
+                    )
+
+                    try:
+                        await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+                    except Exception as e:
+                        logger.error(f"Error sending message: {e}")
+
+                # update ps
+                ps[position['s']] = {
+                    'positionAmt': position['pa'],
+                    'entryPrice': position['ep'],
+                    'unRealizedProfit': position['up']
+                }
 
 
 async def user_socket_manager(client, application):
@@ -60,19 +67,19 @@ async def user_socket_manager(client, application):
             user_socket = bsm.futures_user_socket()
 
             async with user_socket as stream:
-                end_time = asyncio.get_event_loop().time() + 12 * 60 * 60  # 12 hours from now
+                end_time = asyncio.get_event_loop().time() + 12 * 60 * 60
                 while asyncio.get_event_loop().time() < end_time:
                     try:
-                        msg = await asyncio.wait_for(stream.recv(), timeout=60)
+                        msg = await stream.recv()
                         await process_message(msg, application)
                     except asyncio.TimeoutError:
-                        logger.info("No message received in 60 seconds, continuing...")
+                        logger.info("timeout error")
                     except Exception as e:
-                        logger.error(f"Error processing message: {e}")
+                        logger.error(f"ws error : {e}")
 
-            logger.info("12 hours passed, restarting WebSocket connection")
+            logger.info("12 hour restart")
         except Exception as e:
-            logger.error(f"WebSocket connection error: {e}")
+            logger.error(f"ws connection error: {e}")
             await asyncio.sleep(5)
 
 
@@ -89,17 +96,19 @@ async def send_ping(update, context):
 async def send_position(update: Update, context: CallbackContext) -> None:
     text = ''
     for symbol, position in ps.items():
+        position_amount = Decimal(position['positionAmt'])
+        entry_price = Decimal(position['entryPrice'])
+        unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
+
         text += (f"종목 : {symbol}\n"
-                 f"포지션: {utils.long_or_short(position['positionAmt'])}\n"
-                 f"포지션 수량: {position['positionAmt']}\n"
-                 f"진입가격: {position['entryPrice']}\n"
-                 f"미실현 손익: {position['unRealizedProfit']}\n"
+                 f"포지션: {utils.long_or_short(position_amount)}\n"
+                 f"포지션 수량: {position_amount:,}\n" 
+                 f"진입 가격: {entry_price:,}\n" 
+                 f"미실현 손익: {unrealized_profit:,.0f} {utils.loss_or_profit(unrealized_profit)}\n"  
                  f"--------------------------------\n")
 
     if text == '':
-        text = "현재 보유중인 포지션이 없습니다."
-    else:
-        text = '현재 선물 포지션 정보\n--------------------------------\n' + text
+        text = "현재 보유 중 인 포지션이 없습니다."
 
     await update.message.reply_text(text)
 
@@ -119,11 +128,12 @@ async def main():
                 'unRealizedProfit': position['unRealizedProfit'],
             }
 
+    # init tg
     application = Application.builder().token(TELEGRAM_API_TOKEN).build()
     application.add_handler(CommandHandler('ping', send_ping))
     application.add_handler(CommandHandler('positions', send_position))
 
-    # Run both Telegram bot and Binance WebSocket
+    # run tg & binance ws
     await asyncio.gather(
         run_telegram_bot(application),
         user_socket_manager(async_client, application)
