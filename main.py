@@ -29,30 +29,30 @@ ps = {}
 
 
 async def process_message(msg, application):
+    logger.info(f"Received message: {msg}")  # 수신된 메시지 출력
     if msg['e'] == 'ACCOUNT_UPDATE':
         account = msg['a']
         for position in account['P']:
             if float(position['pa']) != 0:
-                # position 변화가 생겼을 때
-                if ps[position['s']]['positionAmt'] != position['pa']:
+                # position 변화 감지 시 처리
+                entry_price = Decimal(position['ep']).quantize(Decimal('0.00000001'))
+                unrealized_profit = Decimal(position['up']).quantize(Decimal('1'))
 
-                    entry_price = Decimal(position['ep']).quantize(Decimal('0.00000001'))
-                    unrealized_profit = Decimal(position['up']).quantize(Decimal('1'))
+                message = (
+                    f"포지션 변화 감지\n"
+                    f"포지션: {utils.long_or_short(position['pa'])}\n"
+                    f"포지션 수량: {position['pa']}\n"
+                    f"진입 가격: {entry_price}\n"
+                    f"미실현 손익: {unrealized_profit}\n"
+                )
 
-                    message = (
-                        f"포지션 변화 감지\n"
-                        f"포지션: {utils.long_or_short(position['pa'])}\n"
-                        f"포지션 수량: {position['pa']}\n"
-                        f"진입 가격: {entry_price}\n"
-                        f"미실현 손익: {unrealized_profit}\n"
-                    )
+                # 텔레그램 메시지 전송
+                try:
+                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+                except Exception as e:
+                    logger.error(f"Error sending message: {e}")
 
-                    try:
-                        await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-                    except Exception as e:
-                        logger.error(f"Error sending message: {e}")
-
-                # update ps
+                # update position
                 ps[position['s']] = {
                     'positionAmt': position['pa'],
                     'entryPrice': position['ep'],
@@ -64,23 +64,19 @@ async def user_socket_manager(client, application):
     while True:
         try:
             bsm = BinanceSocketManager(client)
-            user_socket = bsm.futures_user_socket()
-
-            async with user_socket as stream:
-                end_time = asyncio.get_event_loop().time() + 12 * 60 * 60
-                while asyncio.get_event_loop().time() < end_time:
+            async with bsm.futures_user_socket() as stream:
+                while True:
                     try:
                         msg = await stream.recv()
-                        await process_message(msg, application)
+                        if msg:
+                            await process_message(msg, application)
                     except asyncio.TimeoutError:
-                        logger.info("timeout error")
+                        logger.info("WebSocket timeout error")
                     except Exception as e:
-                        logger.error(f"ws error : {e}")
-
-            logger.info("12 hour restart")
+                        logger.error(f"WebSocket error: {e}")
         except Exception as e:
-            logger.error(f"ws connection error: {e}")
-            await asyncio.sleep(5)
+            logger.error(f"WebSocket connection error: {e}")
+            await asyncio.sleep(5)  # 재연결 시도
 
 
 async def run_telegram_bot(application):
