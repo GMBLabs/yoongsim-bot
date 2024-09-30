@@ -2,8 +2,10 @@ import asyncio
 import logging
 import os
 import utils
+import time
 
 from decimal import Decimal
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import CommandHandler, Application, CallbackContext
@@ -22,61 +24,117 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # 포지션 정보 저장
 ps = {}
 
 
-async def process_message(msg, application):
-    logger.info(f"Received message: {msg}")  # 수신된 메시지 출력
-    if msg['e'] == 'ACCOUNT_UPDATE':
-        account = msg['a']
-        for position in account['P']:
-            if float(position['pa']) != 0:
-                # position 변화 감지 시 처리
-                entry_price = Decimal(position['ep']).quantize(Decimal('0.00000001'))
-                unrealized_profit = Decimal(position['up']).quantize(Decimal('1'))
+async def update_positions(async_client, application, init=False):
+    global ps
+
+    new_ps = {}
+
+    # get position
+    for position in await async_client.futures_position_information():
+        if float(position['positionAmt']) != 0:
+            new_ps[position['symbol']] = {
+                'positionAmt': position['positionAmt'],
+                'entryPrice': position['entryPrice'],
+                'unRealizedProfit': position['unRealizedProfit'],
+            }
+            
+    # check position change
+    if not init:
+        # position close
+        for symbol, old_position in ps.items():
+            if symbol not in new_ps:
+                position_amount = Decimal(old_position['positionAmt'])
+                entry_price = Decimal(old_position['entryPrice'])
+                realized_profit = Decimal(old_position['unRealizedProfit']).quantize(Decimal('1'))
 
                 message = (
-                    f"포지션 변화 감지\n"
-                    f"포지션: {utils.long_or_short(position['pa'])}\n"
-                    f"포지션 수량: {position['pa']}\n"
-                    f"진입 가격: {entry_price}\n"
-                    f"미실현 손익: {unrealized_profit}\n"
+                    f"포지션이 종료되었습니다\n"
+                    f"<b>종목</b>: <code>{symbol}</code>\n"
+                    f"<b>수량</b> : {position_amount:,8f}\n" 
+                    f"<b>진입 가격</b>: {entry_price:,.8f}\n" 
+                    f"<b>최종 실현 손익</b>: {realized_profit:,.0f}\n"
                 )
-
-                # 텔레그램 메시지 전송
                 try:
-                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
                 except Exception as e:
                     logger.error(f"Error sending message: {e}")
+    
+    
+       # position change
+        for symbol, new_position in new_ps.items():
+            if symbol not in ps:
+                # new position
+                position_amount = Decimal(new_position['positionAmt'])
+                entry_price = Decimal(new_position['entryPrice'])
 
-                # update position
-                ps[position['s']] = {
-                    'positionAmt': position['pa'],
-                    'entryPrice': position['ep'],
-                    'unRealizedProfit': position['up']
-                }
+                message = (
+                    f"새로운 포지션이 열렸습니다\n"
+                    f"<b>종목</b>: <code>{symbol}</code>\n"
+                    f"<b>수량</b> : {position_amount:,8f}\n" 
+                    f"<b>진입 가격</b>: {entry_price:,.8f}\n"
+                )
+                try:
+                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
+                except Exception as e:
+                    logger.error(f"Error sending message: {e}")
+            else:
+                # position change
+                if ps[symbol]['positionAmt'] != new_position['positionAmt']:
+                    # position change
+                    old_amount = Decimal(ps[symbol]['positionAmt'])
+                    new_amount = Decimal(new_position['positionAmt'])
+    
+                    if old_amount != new_amount:
+                        if new_amount > old_amount:
+                            # 추가 진입 
+                            message_type = "포지션이 추가되었습니다."
+                            change_type = "추가 진입"
+                        else:
+                            # 부분 청산 
+                            message_type = "포지션이 부분 청산되었습니다."
+                            change_type = "부분 청산"
+    
+                        # calc profit change
+                        old_unrealized_profit = Decimal(ps[symbol]['unRealizedProfit'])
+                        new_unrealized_profit = Decimal(new_position['unRealizedProfit'])
+                        profit_change = new_unrealized_profit - old_unrealized_profit
+                        profit_change = profit_change.quantize(Decimal('1'))
+
+                        entry_price = Decimal(new_position['entryPrice'])
+                        realized_profit = Decimal(new_position['unRealizedProfit']).quantize(Decimal('1'))
+
+                        message = (
+                            f"{message_type}\n"
+                            f"<b>종목</b>: <code>{symbol}</code>\n"
+                            f"<b>이전 수량</b>: {old_amount:,8f}\n"
+                            f"<b>변경된 수량</b>: {new_amount:,8f}\n"
+                            f"<b>변경 종류</b>: {change_type}\n"
+                            f"<b>진입 가격</b>: {entry_price:,.8f}\n"
+                            f"<b>미실현 손익</b>: {realized_profit:,.0f}\n"
+                            f"<b>손익 변화</b>: {profit_change:,.0f}\n"
+                        )
+    
+                        try:
+                            await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
+                        except Exception as e:
+                            logger.error(f"Error sending message: {e}")
+
+    # update global var
+    ps = new_ps
 
 
-async def user_socket_manager(client, application):
+async def periodic_update_positions(async_client, application):
     while True:
-        try:
-            bsm = BinanceSocketManager(client)
-            async with bsm.futures_user_socket() as stream:
-                while True:
-                    try:
-                        msg = await stream.recv()
-                        if msg:
-                            await process_message(msg, application)
-                    except asyncio.TimeoutError:
-                        logger.info("WebSocket timeout error")
-                    except Exception as e:
-                        logger.error(f"WebSocket error: {e}")
-        except Exception as e:
-            logger.error(f"WebSocket connection error: {e}")
-            await asyncio.sleep(5)  # 재연결 시도
+        await update_positions(async_client, application, False)
+        await asyncio.sleep(10)
 
 
 async def run_telegram_bot(application):
@@ -85,7 +143,7 @@ async def run_telegram_bot(application):
     await application.updater.start_polling()
 
 
-async def send_ping(update, context):
+async def send_ping(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text('pong')
 
 
@@ -96,43 +154,38 @@ async def send_position(update: Update, context: CallbackContext) -> None:
         entry_price = Decimal(position['entryPrice'])
         unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
 
-        text += (f"종목 : {symbol}\n"
-                 f"포지션: {utils.long_or_short(position_amount)}\n"
-                 f"포지션 수량: {position_amount:,}\n" 
-                 f"진입 가격: {entry_price:,}\n" 
-                 f"미실현 손익: {unrealized_profit:,.0f} {utils.loss_or_profit(unrealized_profit)}\n"  
-                 f"--------------------------------\n")
-
+        text += (
+            f"<b>종목</b> : <code>{symbol}</code>\n"
+            f"<b>포지션</b> : <code>{utils.long_or_short(position_amount)}</code>\n"
+            f"<b>수량</b> : {position_amount:,8f}\n" 
+            f"<b>진입 가격</b>: {entry_price:,.8f}\n" 
+            f"<b>미실현 손익</b>: <code>{unrealized_profit:,.0f}</code> {utils.loss_or_profit(unrealized_profit)}\n"
+            f"------------------------\n"
+        )
     if text == '':
-        text = "현재 보유 중 인 포지션이 없습니다."
+        text = "포지션이 없습니다."
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, parse_mode='HTML')
 
 
 async def main():
     # binance ws init
     async_client = await AsyncClient.create(BINANCE_API_KEY, BINANCE_API_SECRET)
 
-    # init positions
-    logger.info('------초기 포지션 설정------')
-    for position in await async_client.futures_position_information():
-        if float(position['positionAmt']) != 0:
-            logger.info(f"Position: {position}")
-            ps[position['symbol']] = {
-                'positionAmt': position['positionAmt'],
-                'entryPrice': position['entryPrice'],
-                'unRealizedProfit': position['unRealizedProfit'],
-            }
+    print(await async_client.futures_account_balance())
 
     # init tg
     application = Application.builder().token(TELEGRAM_API_TOKEN).build()
     application.add_handler(CommandHandler('ping', send_ping))
     application.add_handler(CommandHandler('positions', send_position))
 
-    # run tg & binance ws
+    # init positions
+    await update_positions(async_client, application, True)
+    
+    # run tg & watch positions
     await asyncio.gather(
-        run_telegram_bot(application),
-        user_socket_manager(async_client, application)
+        periodic_update_positions(async_client, application),
+        run_telegram_bot(application)
     )
 
 if __name__ == "__main__":
