@@ -117,15 +117,6 @@ async def update_positions(async_client, application, init=False):
                         new_amount = new_amount.quantize(Decimal('0.00000001'))
     
                     if old_amount != new_amount:
-                        if new_amount > old_amount:
-                            # 추가 진입 
-                            message_type = "포지션이 추가되었습니다."
-                            change_type = "추가 진입"
-                        else:
-                            # 부분 청산 
-                            message_type = "포지션이 부분 청산되었습니다."
-                            change_type = "부분 청산"
-    
                         # calc profit change
                         old_unrealized_profit = Decimal(ps[symbol]['unRealizedProfit'])
                         new_unrealized_profit = Decimal(new_position['unRealizedProfit'])
@@ -139,16 +130,29 @@ async def update_positions(async_client, application, init=False):
                             entry_price = entry_price.quantize(Decimal('0.00000001'))
                         realized_profit = Decimal(new_position['unRealizedProfit']).quantize(Decimal('1'))
 
-                        message = (
-                            f"{message_type}\n"
-                            f"<b>종목</b>: <code>{symbol}</code>\n"
-                            f"<b>이전 수량</b>: {old_amount:,}\n"
-                            f"<b>변경된 수량</b>: {new_amount:,}\n"
-                            f"<b>변경 종류</b>: {change_type}\n"
-                            f"<b>진입 가격</b>: {entry_price:,}\n"
-                            f"<b>미실현 손익</b>: {realized_profit:,}\n"
-                            f"<b>손익 변화</b>: {profit_change:,}\n"
-                        )
+                        if new_amount > old_amount:
+                            # 추가 진입
+                            message = (
+                                f"포지션이 추가되었습니다.\n"
+                                f"<b>종목</b>: <code>{symbol}</code>\n"
+                                f"<b>이전 수량</b>: {old_amount:,}\n"
+                                f"<b>변경된 수량</b>: {new_amount:,}\n"
+                                f"<b>진입 가격</b>: {entry_price:,}\n"
+                                f"<b>미실현 손익</b>: {realized_profit:,}\n"
+                            )
+                        else:
+                            # 부분 청산
+                            message = (
+                                f"포지션이 부분 청산되었습니다.\n"
+                                f"<b>종목</b>: <code>{symbol}</code>\n"
+                                f"<b>이전 수량</b>: {old_amount:,}\n"
+                                f"<b>변경된 수량</b>: {new_amount:,}\n"
+                                f"<b>진입 가격</b>: {entry_price:,}\n"
+                                f"<b>미실현 손익</b>: {realized_profit:,}\n"
+                                f"<b>실현 손익</b>: {profit_change:,}\n"
+                            )
+
+
     
                         try:
                             await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
