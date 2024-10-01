@@ -52,15 +52,23 @@ async def update_positions(async_client, application, init=False):
         for symbol, old_position in ps.items():
             if symbol not in new_ps:
                 position_amount = Decimal(old_position['positionAmt'])
+                if position_amount == position_amount.to_integral():
+                    position_amount = position_amount.quantize(Decimal('1'))
+                else:
+                    position_amount = position_amount.quantize(Decimal('0.00000001'))
                 entry_price = Decimal(old_position['entryPrice'])
+                if entry_price == entry_price.to_integral():
+                    entry_price = entry_price.quantize(Decimal('1'))
+                else:
+                    entry_price = entry_price.quantize(Decimal('0.00000001'))
                 realized_profit = Decimal(old_position['unRealizedProfit']).quantize(Decimal('1'))
 
                 message = (
                     f"포지션이 종료되었습니다\n"
                     f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,8f}\n" 
-                    f"<b>진입 가격</b>: {entry_price:,.8f}\n" 
-                    f"<b>최종 실현 손익</b>: {realized_profit:,.0f}\n"
+                    f"<b>수량</b> : {position_amount:,}\n" 
+                    f"<b>진입 가격</b>: {entry_price:,}\n" 
+                    f"<b>최종 실현 손익</b>: {realized_profit:,}\n"
                 )
                 try:
                     await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
@@ -73,13 +81,21 @@ async def update_positions(async_client, application, init=False):
             if symbol not in ps:
                 # new position
                 position_amount = Decimal(new_position['positionAmt'])
+                if position_amount == position_amount.to_integral():
+                    position_amount = position_amount.quantize(Decimal('1'))
+                else:
+                    position_amount = position_amount.quantize(Decimal('0.00000001'))
                 entry_price = Decimal(new_position['entryPrice'])
+                if entry_price == entry_price.to_integral():
+                    entry_price = entry_price.quantize(Decimal('1'))
+                else:
+                    entry_price = entry_price.quantize(Decimal('0.00000001'))
 
                 message = (
                     f"새로운 포지션이 열렸습니다\n"
                     f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,8f}\n" 
-                    f"<b>진입 가격</b>: {entry_price:,.8f}\n"
+                    f"<b>수량</b> : {position_amount:,}\n" 
+                    f"<b>진입 가격</b>: {entry_price:,}\n"
                 )
                 try:
                     await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
@@ -90,7 +106,15 @@ async def update_positions(async_client, application, init=False):
                 if ps[symbol]['positionAmt'] != new_position['positionAmt']:
                     # position change
                     old_amount = Decimal(ps[symbol]['positionAmt'])
+                    if old_amount == old_amount.to_integral():
+                        old_amount = old_amount.quantize(Decimal('1'))
+                    else:
+                        old_amount = old_amount.quantize(Decimal('0.00000001'))
                     new_amount = Decimal(new_position['positionAmt'])
+                    if new_amount == new_amount.to_integral():
+                        new_amount = new_amount.quantize(Decimal('1'))
+                    else:
+                        new_amount = new_amount.quantize(Decimal('0.00000001'))
     
                     if old_amount != new_amount:
                         if new_amount > old_amount:
@@ -109,17 +133,21 @@ async def update_positions(async_client, application, init=False):
                         profit_change = profit_change.quantize(Decimal('1'))
 
                         entry_price = Decimal(new_position['entryPrice'])
+                        if entry_price == entry_price.to_integral():
+                            entry_price = entry_price.quantize(Decimal('1'))
+                        else:
+                            entry_price = entry_price.quantize(Decimal('0.00000001'))
                         realized_profit = Decimal(new_position['unRealizedProfit']).quantize(Decimal('1'))
 
                         message = (
                             f"{message_type}\n"
                             f"<b>종목</b>: <code>{symbol}</code>\n"
-                            f"<b>이전 수량</b>: {old_amount:,8f}\n"
-                            f"<b>변경된 수량</b>: {new_amount:,8f}\n"
+                            f"<b>이전 수량</b>: {old_amount:,}\n"
+                            f"<b>변경된 수량</b>: {new_amount:,}\n"
                             f"<b>변경 종류</b>: {change_type}\n"
-                            f"<b>진입 가격</b>: {entry_price:,.8f}\n"
-                            f"<b>미실현 손익</b>: {realized_profit:,.0f}\n"
-                            f"<b>손익 변화</b>: {profit_change:,.0f}\n"
+                            f"<b>진입 가격</b>: {entry_price:,}\n"
+                            f"<b>미실현 손익</b>: {realized_profit:,}\n"
+                            f"<b>손익 변화</b>: {profit_change:,}\n"
                         )
     
                         try:
@@ -151,15 +179,23 @@ async def send_position(update: Update, context: CallbackContext) -> None:
     text = ''
     for symbol, position in ps.items():
         position_amount = Decimal(position['positionAmt'])
+        if position_amount == position_amount.to_integral():
+            position_amount = position_amount.quantize(Decimal('1'))
+        else:
+            position_amount = position_amount.quantize(Decimal('0.00000001'))
         entry_price = Decimal(position['entryPrice'])
+        if entry_price == entry_price.to_integral():
+            entry_price = entry_price.quantize(Decimal('1'))
+        else:
+            entry_price = entry_price.quantize(Decimal('0.00000001'))
         unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
 
         text += (
             f"<b>종목</b> : <code>{symbol}</code>\n"
             f"<b>포지션</b> : <code>{utils.long_or_short(position_amount)}</code>\n"
-            f"<b>수량</b> : {position_amount:,8f}\n" 
-            f"<b>진입 가격</b>: {entry_price:,.8f}\n" 
-            f"<b>미실현 손익</b>: <code>{unrealized_profit:,.0f}</code> {utils.loss_or_profit(unrealized_profit)}\n"
+            f"<b>수량</b> : {position_amount:,}\n" 
+            f"<b>진입 가격</b>: {entry_price:,}\n" 
+            f"<b>미실현 손익</b>: <code>{unrealized_profit:,}</code> {utils.loss_or_profit(unrealized_profit)}\n"
             f"------------------------\n"
         )
     if text == '':
