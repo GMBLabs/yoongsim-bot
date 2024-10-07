@@ -25,11 +25,12 @@ def load_image(image_path: str) -> io.BytesIO:
     return img_byte_arr
 
 
-def add_text_to_image(image_path: str, symbol: str, amount:str, entry_price: str, mark_price: str, profit: str) -> io.BytesIO:
+def add_text_to_image(image_path: str, symbol: str, amount: str, entry_price: str, mark_price: str,
+                      profit: str) -> io.BytesIO:
     image = Image.open(image_path)
     draw = ImageDraw.Draw(image)
 
-    unbounded_font_path = "resource/font/Unbounded-Bold.ttf"
+    unbounded_font_path = "resource/font/Unbounded-SemiBold.ttf"
     unbounded_font = ImageFont.truetype(unbounded_font_path, size=110)
     unbounded_font_small = ImageFont.truetype(unbounded_font_path, size=50)
 
@@ -46,9 +47,9 @@ def add_text_to_image(image_path: str, symbol: str, amount:str, entry_price: str
     text_position = (170, 190)
     way = long_or_short(amount)
     if way == 'LONG':
-        way_text_color = (62, 143, 41)
+        way_text_color = (46, 189, 133)
     else:
-        way_text_color = (191, 16, 41)
+        way_text_color = (246, 70, 93)
     draw.text(text_position, way, font=ibm_font, fill=way_text_color)
 
     # entry price
@@ -62,12 +63,12 @@ def add_text_to_image(image_path: str, symbol: str, amount:str, entry_price: str
     draw.text(text_position, mark_price, font=ibm_font_small, fill=text_color_white)
 
     # profit
-    text_position = (90, 500)
-    profit_text_color = (62, 143, 41) if float(profit) > 0 else (191, 16, 41)
+    text_position = (85, 500)
+    profit_text_color = (46, 189, 133) if float(profit) > 0 else (246, 70, 93)
     draw.text(text_position, '$', font=unbounded_font_small, fill=profit_text_color)
 
-    text_position = (130, 450)
-    profit_text_color = (62, 143, 41) if float(profit) > 0 else (191, 16, 41)
+    text_position = (125, 450)
+    profit_text_color = (46, 189, 133) if float(profit) > 0 else (246, 70, 93)
     if abs(float(profit)) < 1000:
         unrealized_profit = str(Decimal(profit).quantize(Decimal('.01')))
     elif 1000 < abs(float(profit)) < 10000:
@@ -84,7 +85,10 @@ def add_text_to_image(image_path: str, symbol: str, amount:str, entry_price: str
 
 
 def create_position_image(symbol: str, amount: str, entry_price: str, mark_price: str, profit: str) -> io.BytesIO:
-    image_path = 'resource/image/background.png'
+    if float(profit) > 0:
+        image_path = 'resource/image/background_profit.png'
+    else:
+        image_path = 'resource/image/background_loss.png'
 
     image_stream = add_text_to_image(image_path, symbol, amount, entry_price, mark_price, profit)
     return image_stream
