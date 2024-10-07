@@ -12,14 +12,14 @@ from telegram.ext import CommandHandler, Application, CallbackContext
 
 from binance import BinanceSocketManager, AsyncClient
 
-# 환경 변수 로드
+# load env
 load_dotenv()
 TELEGRAM_API_TOKEN = os.getenv('TELEGRAM_API_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET')
 
-# 로깅 설정
+# logging setting
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -28,7 +28,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# 포지션 정보 저장
+# position
 ps = {}
 
 
@@ -49,6 +49,8 @@ async def update_positions(async_client, application, init=False):
 
     # check position change
     if not init:
+        # todo: position close image
+        # todo: get data from position history
         # position close
         for symbol, old_position in ps.items():
             if symbol not in new_ps:
@@ -85,6 +87,7 @@ async def update_positions(async_client, application, init=False):
         # position change
         for symbol, new_position in new_ps.items():
             if symbol not in ps:
+                # todo: new position image
                 # new position
                 position_amount = Decimal(new_position['positionAmt'])
                 if position_amount == position_amount.to_integral():
@@ -108,6 +111,7 @@ async def update_positions(async_client, application, init=False):
                 except Exception as e:
                     logger.error(f"Error sending message: {e}")
             else:
+                # todo: text refine
                 # position change
                 if ps[symbol]['positionAmt'] != new_position['positionAmt']:
                     # position change
@@ -204,39 +208,12 @@ async def send_position(update: Update, context: CallbackContext) -> None:
 
         await update.message.reply_photo(photo=image_stream)
 
-    # text = ''
-    # for symbol, position in ps.items():
-    #     position_amount = Decimal(position['positionAmt'])
-    #
-    #     if position_amount == position_amount.to_integral():
-    #         position_amount = position_amount.quantize(Decimal('1'))
-    #     else:
-    #         position_amount = position_amount.quantize(Decimal('0.00000001'))
-    #     entry_price = Decimal(position['entryPrice'])
-    #     if entry_price == entry_price.to_integral():
-    #         entry_price = entry_price.quantize(Decimal('1'))
-    #     else:
-    #         entry_price = entry_price.quantize(Decimal('0.00000001'))
-    #     unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
-    #
-    #     text += (
-    #         f"<b>종목</b> : <code>{symbol}</code>\n"
-    #         f"<b>포지션</b> : <code>{utils.long_or_short(position_amount)}</code>\n"
-    #         f"<b>수량</b> : {position_amount:,}\n"
-    #         f"<b>진입 가격</b>: {entry_price:,}\n"
-    #         f"<b>미실현 손익</b>: <code>{unrealized_profit:,}</code> {utils.loss_or_profit(unrealized_profit)}\n"
-    #         f"------------------------\n"
-    #     )
-    # if text == '':
-    #     text = "포지션이 없습니다."
-    #
-    # await update.message.reply_text(text, parse_mode='HTML')
-
 
 async def main():
-    # binance ws init
+    # init binance
     async_client = await AsyncClient.create(BINANCE_API_KEY, BINANCE_API_SECRET)
 
+    # check account balance
     print(await async_client.futures_account_balance())
 
     # init tg

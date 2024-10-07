@@ -25,11 +25,18 @@ def load_image(image_path: str) -> io.BytesIO:
     return img_byte_arr
 
 
-def add_text_to_image(image_path: str, symbol: str, amount: str, entry_price: str, mark_price: str,
-                      profit: str) -> io.BytesIO:
+def create_position_image(symbol: str, amount: str, entry_price: str, mark_price: str,profit: str) -> io.BytesIO:
+    # select image file
+    if float(profit) > 0:
+        image_path = 'resource/image/background_profit.png'
+    else:
+        image_path = 'resource/image/background_loss.png'
+
+    # load image
     image = Image.open(image_path)
     draw = ImageDraw.Draw(image)
 
+    # load font
     unbounded_font_path = "resource/font/Unbounded-SemiBold.ttf"
     unbounded_font = ImageFont.truetype(unbounded_font_path, size=110)
     unbounded_font_small = ImageFont.truetype(unbounded_font_path, size=50)
@@ -38,9 +45,9 @@ def add_text_to_image(image_path: str, symbol: str, amount: str, entry_price: st
     ibm_font = ImageFont.truetype(ibm_font_path, size=50)
     ibm_font_small = ImageFont.truetype(ibm_font_path, size=30)
 
+    # symbol
     text_position = (170, 130)
     text_color_white = (255, 255, 255)
-    # symbol
     draw.text(text_position, symbol, font=ibm_font, fill=text_color_white)
 
     # position
@@ -79,45 +86,6 @@ def add_text_to_image(image_path: str, symbol: str, amount: str, entry_price: st
 
     img_byte_arr = io.BytesIO()
     image.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-
-    return img_byte_arr
-
-
-def create_position_image(symbol: str, amount: str, entry_price: str, mark_price: str, profit: str) -> io.BytesIO:
-    if float(profit) > 0:
-        image_path = 'resource/image/background_profit.png'
-    else:
-        image_path = 'resource/image/background_loss.png'
-
-    image_stream = add_text_to_image(image_path, symbol, amount, entry_price, mark_price, profit)
-    return image_stream
-
-
-def create_image(number: int) -> io.BytesIO:
-    img = Image.new('RGB', (200, 100), color='white')
-
-    # 글꼴 설정 (시스템 글꼴 경로)
-    try:
-        font = ImageFont.truetype("arial.ttf", 36)  # 시스템에서 Arial 폰트를 사용
-    except IOError:
-        font = ImageFont.load_default()  # Arial 폰트가 없을 경우 기본 폰트 사용
-
-    # 이미지에 숫자 추가
-    d = ImageDraw.Draw(img)
-    text = str(number)
-
-    # 텍스트 크기 계산 (Pillow 8.0.0 이상에서 사용)
-    text_bbox = d.textbbox((0, 0), text, font=font)
-    text_width = text_bbox[2] - text_bbox[0]
-    text_height = text_bbox[3] - text_bbox[1]
-
-    # 텍스트를 이미지 중앙에 배치
-    d.text(((200 - text_width) / 2, (100 - text_height) / 2), text, fill=(0, 0, 0), font=font)
-
-    # 이미지 데이터를 바이트 스트림으로 저장
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
 
     return img_byte_arr
