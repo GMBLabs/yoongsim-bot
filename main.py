@@ -43,9 +43,10 @@ async def update_positions(async_client, application, init=False):
             new_ps[position['symbol']] = {
                 'positionAmt': position['positionAmt'],
                 'entryPrice': position['entryPrice'],
+                'markPrice': position['markPrice'],
                 'unRealizedProfit': position['unRealizedProfit'],
             }
-            
+
     # check position change
     if not init:
         # position close
@@ -61,22 +62,27 @@ async def update_positions(async_client, application, init=False):
                     entry_price = entry_price.quantize(Decimal('1'))
                 else:
                     entry_price = entry_price.quantize(Decimal('0.00000001'))
+                mark_price = Decimal(old_position['markPrice'])
+                if mark_price == mark_price.to_integral():
+                    mark_price = mark_price.quantize(Decimal('1'))
+                else:
+                    mark_price = mark_price.quantize(Decimal('0.00000001'))
                 realized_profit = Decimal(old_position['unRealizedProfit']).quantize(Decimal('1'))
 
                 message = (
                     f"포지션이 종료되었습니다\n"
                     f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,}\n" 
-                    f"<b>진입 가격</b>: {entry_price:,}\n" 
+                    f"<b>수량</b> : {position_amount:,}\n"
+                    f"<b>진입 가격</b>: {entry_price:,}\n"
+                    f"<b>현재 가격</b>: {mark_price:,}\n"
                     f"<b>최종 실현 손익</b>: {realized_profit:,}\n"
                 )
                 try:
                     await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
                 except Exception as e:
                     logger.error(f"Error sending message: {e}")
-    
-    
-       # position change
+
+        # position change
         for symbol, new_position in new_ps.items():
             if symbol not in ps:
                 # new position
@@ -94,7 +100,7 @@ async def update_positions(async_client, application, init=False):
                 message = (
                     f"새로운 포지션이 열렸습니다\n"
                     f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,}\n" 
+                    f"<b>수량</b> : {position_amount:,}\n"
                     f"<b>진입 가격</b>: {entry_price:,}\n"
                 )
                 try:
@@ -115,7 +121,7 @@ async def update_positions(async_client, application, init=False):
                         new_amount = new_amount.quantize(Decimal('1'))
                     else:
                         new_amount = new_amount.quantize(Decimal('0.00000001'))
-    
+
                     if old_amount != new_amount:
                         # calc profit change
                         old_unrealized_profit = Decimal(ps[symbol]['unRealizedProfit'])
@@ -128,6 +134,12 @@ async def update_positions(async_client, application, init=False):
                             entry_price = entry_price.quantize(Decimal('1'))
                         else:
                             entry_price = entry_price.quantize(Decimal('0.00000001'))
+
+                        mark_price = Decimal(new_position['markPrice'])
+                        if mark_price == mark_price.to_integral():
+                            mark_price = mark_price.quantize(Decimal('1'))
+                        else:
+                            mark_price = mark_price.quantize(Decimal('0.00000001'))
                         realized_profit = Decimal(new_position['unRealizedProfit']).quantize(Decimal('1'))
 
                         if new_amount > old_amount:
@@ -138,6 +150,7 @@ async def update_positions(async_client, application, init=False):
                                 f"<b>이전 수량</b>: {old_amount:,}\n"
                                 f"<b>변경된 수량</b>: {new_amount:,}\n"
                                 f"<b>진입 가격</b>: {entry_price:,}\n"
+                                f"<b>현재 가격</b>: {mark_price:,}\n"
                                 f"<b>미실현 손익</b>: {realized_profit:,}\n"
                             )
                         else:
@@ -148,14 +161,14 @@ async def update_positions(async_client, application, init=False):
                                 f"<b>이전 수량</b>: {old_amount:,}\n"
                                 f"<b>변경된 수량</b>: {new_amount:,}\n"
                                 f"<b>진입 가격</b>: {entry_price:,}\n"
+                                f"<b>현재 가격</b>: {mark_price:,}\n"
                                 f"<b>미실현 손익</b>: {realized_profit:,}\n"
                                 f"<b>실현 손익</b>: {profit_change:,}\n"
                             )
 
-
-    
                         try:
-                            await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
+                            await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message,
+                                                               parse_mode='HTML')
                         except Exception as e:
                             logger.error(f"Error sending message: {e}")
 
@@ -180,32 +193,44 @@ async def send_ping(update: Update, context: CallbackContext) -> None:
 
 
 async def send_position(update: Update, context: CallbackContext) -> None:
-    text = ''
     for symbol, position in ps.items():
-        position_amount = Decimal(position['positionAmt'])
-        if position_amount == position_amount.to_integral():
-            position_amount = position_amount.quantize(Decimal('1'))
-        else:
-            position_amount = position_amount.quantize(Decimal('0.00000001'))
-        entry_price = Decimal(position['entryPrice'])
-        if entry_price == entry_price.to_integral():
-            entry_price = entry_price.quantize(Decimal('1'))
-        else:
-            entry_price = entry_price.quantize(Decimal('0.00000001'))
-        unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
-
-        text += (
-            f"<b>종목</b> : <code>{symbol}</code>\n"
-            f"<b>포지션</b> : <code>{utils.long_or_short(position_amount)}</code>\n"
-            f"<b>수량</b> : {position_amount:,}\n" 
-            f"<b>진입 가격</b>: {entry_price:,}\n" 
-            f"<b>미실현 손익</b>: <code>{unrealized_profit:,}</code> {utils.loss_or_profit(unrealized_profit)}\n"
-            f"------------------------\n"
+        image_stream = utils.create_position_image(
+            symbol,
+            position['positionAmt'],
+            position['entryPrice'],
+            position['markPrice'],
+            position['unRealizedProfit']
         )
-    if text == '':
-        text = "포지션이 없습니다."
 
-    await update.message.reply_text(text, parse_mode='HTML')
+        await update.message.reply_photo(photo=image_stream)
+
+    # text = ''
+    # for symbol, position in ps.items():
+    #     position_amount = Decimal(position['positionAmt'])
+    #
+    #     if position_amount == position_amount.to_integral():
+    #         position_amount = position_amount.quantize(Decimal('1'))
+    #     else:
+    #         position_amount = position_amount.quantize(Decimal('0.00000001'))
+    #     entry_price = Decimal(position['entryPrice'])
+    #     if entry_price == entry_price.to_integral():
+    #         entry_price = entry_price.quantize(Decimal('1'))
+    #     else:
+    #         entry_price = entry_price.quantize(Decimal('0.00000001'))
+    #     unrealized_profit = Decimal(position['unRealizedProfit']).quantize(Decimal('1'))
+    #
+    #     text += (
+    #         f"<b>종목</b> : <code>{symbol}</code>\n"
+    #         f"<b>포지션</b> : <code>{utils.long_or_short(position_amount)}</code>\n"
+    #         f"<b>수량</b> : {position_amount:,}\n"
+    #         f"<b>진입 가격</b>: {entry_price:,}\n"
+    #         f"<b>미실현 손익</b>: <code>{unrealized_profit:,}</code> {utils.loss_or_profit(unrealized_profit)}\n"
+    #         f"------------------------\n"
+    #     )
+    # if text == '':
+    #     text = "포지션이 없습니다."
+    #
+    # await update.message.reply_text(text, parse_mode='HTML')
 
 
 async def main():
@@ -221,12 +246,13 @@ async def main():
 
     # init positions
     await update_positions(async_client, application, True)
-    
+
     # run tg & watch positions
     await asyncio.gather(
         periodic_update_positions(async_client, application),
         run_telegram_bot(application)
     )
+
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
