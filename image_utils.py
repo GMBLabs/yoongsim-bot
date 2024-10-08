@@ -76,8 +76,8 @@ def create_position_image(symbol: str, amount: str, entry_price: str, mark_price
 
     # mark price
     text_position = (110, 290)
-    if utils.decimal_places(Decimal(entry_price)) > 8:
-        mark_price = Decimal(entry_price).quantize(Decimal('.00000001'))
+    if utils.decimal_places(Decimal(mark_price)) > 8:
+        mark_price = Decimal(mark_price).quantize(Decimal('.00000001'))
     mark_text = 'Mark  ' + str(mark_price)
     draw.text(text_position, mark_text, font=ibm_font_small, fill=text_color_white)
 

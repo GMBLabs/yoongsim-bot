@@ -129,14 +129,14 @@ async def update_positions(async_client):
                 'positionAmt': Decimal(position['positionAmt']),
                 'entryPrice': Decimal(position['entryPrice']),
                 'markPrice': Decimal(position['markPrice']),
-                'unRealizedProfit': position['unRealizedProfit'],
+                'unRealizedProfit': Decimal(position['unRealizedProfit']),
                 'realizedProfit': Decimal(0),
             }
         else:
             # update position
             ps[position['symbol']]['entryPrice'] = Decimal(position['entryPrice'])
             ps[position['symbol']]['markPrice'] = Decimal(position['markPrice'])
-            ps[position['symbol']]['unRealizedProfit'] = position['unRealizedProfit']
+            ps[position['symbol']]['unRealizedProfit'] = Decimal(position['unRealizedProfit']),
             ps[position['symbol']]['realizedProfit'] = Decimal(0)
 
 
