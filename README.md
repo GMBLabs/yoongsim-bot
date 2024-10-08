@@ -1,6 +1,9 @@
-# yonsim-copy-bot
+# yoongsim-bot
 
-Copy bot
+Telegram bot for ugly cryptocurrency trader
+
+Automatically send new positions and close positions status
+
 
 ## Requirements
 
@@ -8,7 +11,7 @@ Copy bot
 pip install -r requirements.txt
 ```
 
-## .env Sample
+## .env
 ```
 TELEGRAM_API_TOKEN=
 TELEGRAM_CHAT_ID=
