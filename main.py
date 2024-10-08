@@ -1,16 +1,14 @@
 import asyncio
 import logging
 import os
-import utils
-import time
+import image_utils
 
-from decimal import Decimal
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from decimal import Decimal
 from telegram import Update
 from telegram.ext import CommandHandler, Application, CallbackContext
-
 from binance import BinanceSocketManager, AsyncClient
+
 
 # load env
 load_dotenv()
@@ -32,158 +30,114 @@ logger = logging.getLogger(__name__)
 ps = {}
 
 
-async def update_positions(async_client, application, init=False):
+async def connect_websocket(async_client, application):
+    while True:
+        try:
+            bsm = BinanceSocketManager(async_client)
+            async with bsm.futures_user_socket() as stream:
+                while True:
+                    try:
+                        msg = await stream.recv()
+                        if msg:
+                            await process_message(msg, application)
+
+                    except asyncio.TimeoutError:
+                        logger.info("WebSocket timeout error")
+                    except Exception as e:
+                        logger.error(f"WebSocket error: {e}")
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            await asyncio.sleep(5)
+
+
+async def process_message(msg, application):
     global ps
 
-    new_ps = {}
+    logger.info(f"Received message: {msg}")
+    if msg['e'] == 'ACCOUNT_UPDATE':
+        account = msg['a']
 
-    # get position
-    for position in await async_client.futures_position_information():
-        if float(position['positionAmt']) != 0:
-            new_ps[position['symbol']] = {
-                'positionAmt': position['positionAmt'],
-                'entryPrice': position['entryPrice'],
-                'markPrice': position['markPrice'],
-                'unRealizedProfit': position['unRealizedProfit'],
-            }
-
-    # check position change
-    if not init:
-        # todo: position close image
-        # todo: get data from position history
-        # position close
-        for symbol, old_position in ps.items():
-            if symbol not in new_ps:
-                position_amount = Decimal(old_position['positionAmt'])
-                if position_amount == position_amount.to_integral():
-                    position_amount = position_amount.quantize(Decimal('1'))
-                else:
-                    position_amount = position_amount.quantize(Decimal('0.00000001'))
-                entry_price = Decimal(old_position['entryPrice'])
-                if entry_price == entry_price.to_integral():
-                    entry_price = entry_price.quantize(Decimal('1'))
-                else:
-                    entry_price = entry_price.quantize(Decimal('0.00000001'))
-                mark_price = Decimal(old_position['markPrice'])
-                if mark_price == mark_price.to_integral():
-                    mark_price = mark_price.quantize(Decimal('1'))
-                else:
-                    mark_price = mark_price.quantize(Decimal('0.00000001'))
-                realized_profit = Decimal(old_position['unRealizedProfit']).quantize(Decimal('1'))
-
-                message = (
-                    f"포지션이 종료되었습니다\n"
-                    f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,}\n"
-                    f"<b>진입 가격</b>: {entry_price:,}\n"
-                    f"<b>현재 가격</b>: {mark_price:,}\n"
-                    f"<b>최종 실현 손익</b>: {realized_profit:,}\n"
-                )
-                try:
-                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
-                except Exception as e:
-                    logger.error(f"Error sending message: {e}")
-
-        # position change
-        for symbol, new_position in new_ps.items():
-            if symbol not in ps:
-                # todo: new position image
+        # check new position & position change
+        for position in account['P']:
+            if ps[position['s']]['positionAmt'] == Decimal(0):
                 # new position
-                position_amount = Decimal(new_position['positionAmt'])
-                if position_amount == position_amount.to_integral():
-                    position_amount = position_amount.quantize(Decimal('1'))
-                else:
-                    position_amount = position_amount.quantize(Decimal('0.00000001'))
-                entry_price = Decimal(new_position['entryPrice'])
-                if entry_price == entry_price.to_integral():
-                    entry_price = entry_price.quantize(Decimal('1'))
-                else:
-                    entry_price = entry_price.quantize(Decimal('0.00000001'))
-
-                message = (
-                    f"새로운 포지션이 열렸습니다\n"
-                    f"<b>종목</b>: <code>{symbol}</code>\n"
-                    f"<b>수량</b> : {position_amount:,}\n"
-                    f"<b>진입 가격</b>: {entry_price:,}\n"
+                image_stream = image_utils.create_new_position_image(
+                    position['s'],
+                    position['pa'],
+                    position['ep'],
                 )
-                try:
-                    await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='HTML')
-                except Exception as e:
-                    logger.error(f"Error sending message: {e}")
+
+                await application.bot.send_photo(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    photo=image_stream,
+                )
+    if msg['e'] == 'ORDER_TRADE_UPDATE':
+        order = msg['o']
+        if order['X'] == 'FILLED':
+            p = ps[order['s']]
+
+            if order['S'] == 'SELL':
+                p['positionAmt'] = p['positionAmt'] - Decimal(order['l'])
             else:
-                # todo: text refine
-                # position change
-                if ps[symbol]['positionAmt'] != new_position['positionAmt']:
-                    # position change
-                    old_amount = Decimal(ps[symbol]['positionAmt'])
-                    if old_amount == old_amount.to_integral():
-                        old_amount = old_amount.quantize(Decimal('1'))
-                    else:
-                        old_amount = old_amount.quantize(Decimal('0.00000001'))
-                    new_amount = Decimal(new_position['positionAmt'])
-                    if new_amount == new_amount.to_integral():
-                        new_amount = new_amount.quantize(Decimal('1'))
-                    else:
-                        new_amount = new_amount.quantize(Decimal('0.00000001'))
+                p['positionAmt'] = p['positionAmt'] + Decimal(order['l'])
+            p['realizedProfit'] = p['realizedProfit'] + Decimal(order['rp'])
 
-                    if old_amount != new_amount:
-                        # calc profit change
-                        old_unrealized_profit = Decimal(ps[symbol]['unRealizedProfit'])
-                        new_unrealized_profit = Decimal(new_position['unRealizedProfit'])
-                        profit_change = new_unrealized_profit - old_unrealized_profit
-                        profit_change = profit_change.quantize(Decimal('1'))
+            if p['positionAmt'] == Decimal(0):
+                image = image_utils.create_position_image(
+                    order['s'],
+                    p['positionAmt'],
+                    p['entryPrice'],
+                    p['markPrice'],
+                    p['realizedProfit'],
+                    True
+                )
 
-                        entry_price = Decimal(new_position['entryPrice'])
-                        if entry_price == entry_price.to_integral():
-                            entry_price = entry_price.quantize(Decimal('1'))
-                        else:
-                            entry_price = entry_price.quantize(Decimal('0.00000001'))
+                await application.bot.send_photo(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    photo=image
+                )
 
-                        mark_price = Decimal(new_position['markPrice'])
-                        if mark_price == mark_price.to_integral():
-                            mark_price = mark_price.quantize(Decimal('1'))
-                        else:
-                            mark_price = mark_price.quantize(Decimal('0.00000001'))
-                        realized_profit = Decimal(new_position['unRealizedProfit']).quantize(Decimal('1'))
+                # reset position
+                p['entryPrice'] = Decimal(0)
+                p['markPrice'] = Decimal(0)
+                p['unRealizedProfit'] = Decimal(0)
+                p['realizedProfit'] = Decimal(0)
 
-                        if new_amount > old_amount:
-                            # 추가 진입
-                            message = (
-                                f"포지션이 추가되었습니다.\n"
-                                f"<b>종목</b>: <code>{symbol}</code>\n"
-                                f"<b>이전 수량</b>: {old_amount:,}\n"
-                                f"<b>변경된 수량</b>: {new_amount:,}\n"
-                                f"<b>진입 가격</b>: {entry_price:,}\n"
-                                f"<b>현재 가격</b>: {mark_price:,}\n"
-                                f"<b>미실현 손익</b>: {realized_profit:,}\n"
-                            )
-                        else:
-                            # 부분 청산
-                            message = (
-                                f"포지션이 부분 청산되었습니다.\n"
-                                f"<b>종목</b>: <code>{symbol}</code>\n"
-                                f"<b>이전 수량</b>: {old_amount:,}\n"
-                                f"<b>변경된 수량</b>: {new_amount:,}\n"
-                                f"<b>진입 가격</b>: {entry_price:,}\n"
-                                f"<b>현재 가격</b>: {mark_price:,}\n"
-                                f"<b>미실현 손익</b>: {realized_profit:,}\n"
-                                f"<b>실현 손익</b>: {profit_change:,}\n"
-                            )
+        if order['X'] == 'PARTIALLY_FILLED':
+            p = ps[order['s']]
 
-                        try:
-                            await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message,
-                                                               parse_mode='HTML')
-                        except Exception as e:
-                            logger.error(f"Error sending message: {e}")
-
-    # update global var
-    ps = new_ps
+            if order['S'] == 'SELL':
+                p['positionAmt'] = p['positionAmt'] - Decimal(order['l'])
+            else:
+                p['positionAmt'] = p['positionAmt'] + Decimal(order['l'])
+            p['realizedProfit'] = p['realizedProfit'] + Decimal(order['rp'])
 
 
-async def periodic_update_positions(async_client, application):
+async def periodic_update_positions(async_client):
     while True:
-        await update_positions(async_client, application, False)
         await asyncio.sleep(10)
+        await update_positions(async_client)
+
+
+async def update_positions(async_client):
+    global ps
+
+    for position in await async_client.futures_position_information():
+        if position['symbol'] not in ps:
+            # init position
+            ps[position['symbol']] = {
+                'positionAmt': Decimal(position['positionAmt']),
+                'entryPrice': Decimal(position['entryPrice']),
+                'markPrice': Decimal(position['markPrice']),
+                'unRealizedProfit': position['unRealizedProfit'],
+                'realizedProfit': Decimal(0),
+            }
+        else:
+            # update position
+            ps[position['symbol']]['entryPrice'] = Decimal(position['entryPrice'])
+            ps[position['symbol']]['markPrice'] = Decimal(position['markPrice'])
+            ps[position['symbol']]['unRealizedProfit'] = position['unRealizedProfit']
+            ps[position['symbol']]['realizedProfit'] = Decimal(0)
 
 
 async def run_telegram_bot(application):
@@ -198,12 +152,16 @@ async def send_ping(update: Update, context: CallbackContext) -> None:
 
 async def send_position(update: Update, context: CallbackContext) -> None:
     for symbol, position in ps.items():
-        image_stream = utils.create_position_image(
+        if float(position['positionAmt']) == 0 and float(position['unRealizedProfit']) == 0:
+            continue
+
+        image_stream = image_utils.create_position_image(
             symbol,
             position['positionAmt'],
             position['entryPrice'],
             position['markPrice'],
-            position['unRealizedProfit']
+            position['unRealizedProfit'],
+            False
         )
 
         await update.message.reply_photo(photo=image_stream)
@@ -213,20 +171,18 @@ async def main():
     # init binance
     async_client = await AsyncClient.create(BINANCE_API_KEY, BINANCE_API_SECRET)
 
-    # check account balance
-    print(await async_client.futures_account_balance())
-
     # init tg
     application = Application.builder().token(TELEGRAM_API_TOKEN).build()
     application.add_handler(CommandHandler('ping', send_ping))
     application.add_handler(CommandHandler('positions', send_position))
 
     # init positions
-    await update_positions(async_client, application, True)
+    await update_positions(async_client)
 
     # run tg & watch positions
     await asyncio.gather(
-        periodic_update_positions(async_client, application),
+        connect_websocket(async_client, application),
+        periodic_update_positions(async_client),
         run_telegram_bot(application)
     )
 
