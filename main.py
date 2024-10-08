@@ -136,7 +136,7 @@ async def update_positions(async_client):
             # update position
             ps[position['symbol']]['entryPrice'] = Decimal(position['entryPrice'])
             ps[position['symbol']]['markPrice'] = Decimal(position['markPrice'])
-            ps[position['symbol']]['unRealizedProfit'] = Decimal(position['unRealizedProfit']),
+            ps[position['symbol']]['unRealizedProfit'] = Decimal(position['unRealizedProfit'])
             ps[position['symbol']]['realizedProfit'] = Decimal(0)
 
 
@@ -152,7 +152,7 @@ async def send_ping(update: Update, context: CallbackContext) -> None:
 
 async def send_position(update: Update, context: CallbackContext) -> None:
     for symbol, position in ps.items():
-        if float(position['positionAmt']) == 0 and float(position['unRealizedProfit']) == 0:
+        if position['positionAmt'] == Decimal(0) and position['unRealizedProfit'] == Decimal(0):
             continue
 
         image_stream = image_utils.create_position_image(
