@@ -151,6 +151,7 @@ async def send_ping(update: Update, context: CallbackContext) -> None:
 
 
 async def send_position(update: Update, context: CallbackContext) -> None:
+    response_counter = 0
     for symbol, position in ps.items():
         if position['positionAmt'] == Decimal(0) and position['unRealizedProfit'] == Decimal(0):
             continue
@@ -164,7 +165,12 @@ async def send_position(update: Update, context: CallbackContext) -> None:
             False
         )
 
+        response_counter += 1
         await update.message.reply_photo(photo=image_stream)
+
+    if response_counter == 0:
+        # todo: no positions
+        await update.message.reply_text('포지션이 존재하지 않습니다.')
 
 
 async def main():
