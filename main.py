@@ -183,7 +183,7 @@ async def send_position(update: Update, context: CallbackContext) -> None:
 
 
 async def send_touch_grass(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_photo(photo='resource/image/touch_grass.jpg', caption='잔디를 만지는 중 입니다...')
+    await update.message.reply_photo(photo='resource/image/touch_grass.png', caption='잔디를 만지는 중 입니다...')
 
 
 async def main():
