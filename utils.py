@@ -5,6 +5,13 @@ def long_or_short(amount):
         return 'SHORT'
 
 
+def long_or_short_closed_case(amount):
+    if float(amount) > 0:
+        return 'SHORT'
+    else:
+        return 'LONG'
+
+
 def loss_or_profit(amount):
     if float(amount) > 0:
         return '수익 중 💰'

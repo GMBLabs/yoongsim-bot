@@ -9,13 +9,13 @@ from telegram import Update
 from telegram.ext import CommandHandler, Application, CallbackContext
 from binance import BinanceSocketManager, AsyncClient
 
-
 # load env
 load_dotenv()
 TELEGRAM_API_TOKEN = os.getenv('TELEGRAM_API_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
 BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET')
+TRADER_NAME = os.getenv('TRADER_NAME')
 
 # logging setting
 logging.basicConfig(
@@ -70,6 +70,7 @@ async def process_message(msg, application):
                 await application.bot.send_photo(
                     chat_id=TELEGRAM_CHAT_ID,
                     photo=image_stream,
+                    caption=f"{TRADER_NAME}님이 트레이더가 신규 포지션을 생성했습니다 !"
                 )
     if msg['e'] == 'ORDER_TRADE_UPDATE':
         order = msg['o']
@@ -83,6 +84,9 @@ async def process_message(msg, application):
             p['realizedProfit'] = p['realizedProfit'] + Decimal(order['rp'])
 
             if p['positionAmt'] == Decimal(0):
+                # if position close
+                # exception : if position close and open at the same time ( reverse )
+                # exception2 : if bot restart realized profit was reset
                 image = image_utils.create_position_image(
                     order['s'],
                     p['positionAmt'],
@@ -94,7 +98,8 @@ async def process_message(msg, application):
 
                 await application.bot.send_photo(
                     chat_id=TELEGRAM_CHAT_ID,
-                    photo=image
+                    photo=image,
+                    caption=f"{TRADER_NAME}님이 트레이더가 포지션을 종료했습니다 !"
                 )
 
                 # reset position
@@ -102,6 +107,10 @@ async def process_message(msg, application):
                 p['markPrice'] = Decimal(0)
                 p['unRealizedProfit'] = Decimal(0)
                 p['realizedProfit'] = Decimal(0)
+
+            else:
+                # position change
+                pass
 
         if order['X'] == 'PARTIALLY_FILLED':
             p = ps[order['s']]
@@ -173,6 +182,10 @@ async def send_position(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text('포지션이 존재하지 않습니다.')
 
 
+async def send_touch_grass(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_photo(photo='resource/image/touch_grass.jpg', caption='잔디를 만지는 중 입니다...')
+
+
 async def main():
     # init binance
     async_client = await AsyncClient.create(BINANCE_API_KEY, BINANCE_API_SECRET)
@@ -181,6 +194,7 @@ async def main():
     application = Application.builder().token(TELEGRAM_API_TOKEN).build()
     application.add_handler(CommandHandler('ping', send_ping))
     application.add_handler(CommandHandler('positions', send_position))
+    application.add_handler(CommandHandler('grass', send_touch_grass))
 
     # init positions
     await update_positions(async_client)

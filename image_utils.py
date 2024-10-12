@@ -27,18 +27,30 @@ def red_or_green_color(way):
     return way_text_color
 
 
-def draw_symbol_to_entry_price(draw, symbol, amount, entry_price):
+def draw_symbol_to_entry_price(draw, symbol, amount, entry_price, realized=False):
     # symbol
-    text_position = (110, 130)
+    text_position = (110, 110)
     draw.text(text_position, symbol, font=ibm_font, fill=text_color_white)
 
     # position
-    text_position = (110, 190)
-    way = utils.long_or_short(amount)
-    draw.text(text_position, way, font=ibm_font, fill=red_or_green_color(way))
+    if realized:
+        text_position = (110, 170)
+        way = utils.long_or_short_closed_case(amount)
+        draw.text(text_position, way, font=ibm_font, fill=red_or_green_color(way))
+    else:
+        text_position = (110, 170)
+        way = utils.long_or_short(amount)
+        draw.text(text_position, way, font=ibm_font, fill=red_or_green_color(way))
+
+    # amount
+    text_position = (110, 230)
+    if utils.decimal_places(Decimal(amount)) > 8:
+        amount = Decimal(amount).quantize(Decimal('.00000001'))
+    amount_text = 'Size  ' + str(amount) + symbol.replace('USDT', '')
+    draw.text(text_position, amount_text, font=ibm_font_small, fill=text_color_white)
 
     # entry price
-    text_position = (110, 250)
+    text_position = (110, 270)
     if utils.decimal_places(Decimal(entry_price)) > 8:
         entry_price = Decimal(entry_price).quantize(Decimal('.00000001'))
     entry_text = 'Entry ' + str(entry_price)
@@ -72,10 +84,10 @@ def create_position_image(symbol: str, amount: str, entry_price: str, mark_price
     image = Image.open(image_path)
 
     draw = ImageDraw.Draw(image)
-    draw = draw_symbol_to_entry_price(draw, symbol, amount, entry_price)
+    draw = draw_symbol_to_entry_price(draw, symbol, amount, entry_price, realized=realized)
 
     # mark price
-    text_position = (110, 290)
+    text_position = (110, 310)
     if utils.decimal_places(Decimal(mark_price)) > 8:
         mark_price = Decimal(mark_price).quantize(Decimal('.00000001'))
     mark_text = 'Mark  ' + str(mark_price)
