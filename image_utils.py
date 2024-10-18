@@ -1,6 +1,7 @@
 import io
 import random
 import utils
+import matplotlib.pyplot as plt
 
 from decimal import Decimal
 from PIL import Image, ImageDraw, ImageFont
@@ -46,7 +47,7 @@ def draw_symbol_to_entry_price(draw, symbol, amount, entry_price, realized=False
     text_position = (110, 230)
     if utils.decimal_places(Decimal(amount)) > 8:
         amount = Decimal(amount).quantize(Decimal('.00000001'))
-    amount_text = 'Size  ' + str(amount) + symbol.replace('USDT', '')
+    amount_text = 'Size  ' + str(amount) + ' ' + symbol.replace('USDT', '')
     draw.text(text_position, amount_text, font=ibm_font_small, fill=text_color_white)
 
     # entry price
@@ -123,3 +124,21 @@ def create_position_image(symbol: str, amount: str, entry_price: str, mark_price
     img_byte_arr.seek(0)
 
     return img_byte_arr
+
+
+def create_funding_chart(funding_data):
+    times = [data['fundingTime'] for data in funding_data]
+    rates = [float(data['fundingRate']) for data in funding_data]
+
+    # 차트 생성
+    plt.figure(figsize=(10, 5))
+    plt.plot(times, rates, marker='o')
+    plt.title('Funding Rate History')
+    plt.xlabel('Time')
+    plt.ylabel('Funding Rate')
+    plt.grid(True)
+
+    img_stream = io.BytesIO()
+    plt.savefig(img_stream, format='png')
+    img_stream.seek(0)
+    return img_stream
