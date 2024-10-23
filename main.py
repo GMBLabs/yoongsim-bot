@@ -9,7 +9,7 @@ from decimal import Decimal
 from telegram import Update
 from telegram.ext import CommandHandler, Application, CallbackContext
 from binance import BinanceSocketManager, AsyncClient
-from pybit.unified_trading import HTTP
+from pybit.unified_trading import HTTP, WebSocket
 
 # load env
 load_dotenv()
@@ -44,7 +44,7 @@ async def connect_websocket(async_client, application):
             async with bsm.futures_user_socket() as stream:
                 while True:
                     if time.time() - start_time > 86400:
-                        logger.info("24시간이 경과하여 WebSocket을 재시작합니다.")
+                        logger.info("restart websocket connection...")
                         break
 
                     try:
@@ -61,6 +61,59 @@ async def connect_websocket(async_client, application):
             await asyncio.sleep(5)
 
 
+async def connect_bybit_websocket(application):
+    ws = WebSocket(
+        testnet=False,
+        api_key=BYBIT_API_KEY,
+        api_secret=BYBIT_API_SECRET,
+        channel_type="private",
+    )
+
+    def callback_with_application(message):
+        process_bybit_message(message, application)
+
+    ws.subscribe('position', callback=callback_with_application)
+
+    while True:
+        try:
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            await asyncio.sleep(5)
+
+
+async def process_bybit_message(message, application):
+    event = message['topic']
+    data = message['data']
+
+    if 'position' in event:
+        if data['size'] == 0:
+            image = image_utils.create_position_image(
+                'bybit',
+                data['symbol'],
+                data['size'],
+                data['entryPrice'],
+                data['markPrice'],
+                data['curRealisedPnl'],
+                True
+            )
+
+            close_msg = await application.bot.send_photo(
+                chat_id=TELEGRAM_CHAT_ID,
+                photo=image,
+                caption=f"{TRADER_NAME}님이 포지션을 종료했습니다 !"
+            )
+
+            # await application.bot.pin_chat_message(
+            #     chat_id=TELEGRAM_CHAT_ID,
+            #     message_id=close_msg.message_id,
+            #     disable_notification=True
+            # )
+        else:
+            # todo: new position
+            print(f"New or updated position: {data}")
+
+
 async def process_message(msg, application):
     global ps
 
@@ -73,6 +126,7 @@ async def process_message(msg, application):
             if ps[position['s']]['positionAmt'] == Decimal(0):
                 # new position
                 image_stream = image_utils.create_new_position_image(
+                    'binance',
                     position['s'],
                     position['pa'],
                     position['ep'],
@@ -85,7 +139,7 @@ async def process_message(msg, application):
                     disable_notification=True
                 )
 
-                await application.bot.pin_chat_message(chat_id=TELEGRAM_CHAT_ID, message_id=new_msg.message_id)
+                # await application.bot.pin_chat_message(chat_id=TELEGRAM_CHAT_ID, message_id=new_msg.message_id)
     if msg['e'] == 'ORDER_TRADE_UPDATE':
         order = msg['o']
         if order['X'] == 'FILLED':
@@ -102,6 +156,7 @@ async def process_message(msg, application):
                 # exception : if position close and open at the same time ( reverse )
                 # exception2 : if bot restart realized profit was reset
                 image = image_utils.create_position_image(
+                    'binance',
                     order['s'],
                     p['positionAmt'],
                     p['entryPrice'],
@@ -116,11 +171,11 @@ async def process_message(msg, application):
                     caption=f"{TRADER_NAME}님이 포지션을 종료했습니다 !"
                 )
 
-                await application.bot.pin_chat_message(
-                    chat_id=TELEGRAM_CHAT_ID,
-                    message_id=close_msg.message_id,
-                    disable_notification=True
-                )
+                # await application.bot.pin_chat_message(
+                #     chat_id=TELEGRAM_CHAT_ID,
+                #     message_id=close_msg.message_id,
+                #     disable_notification=True
+                # )
 
                 # reset position
                 p['entryPrice'] = Decimal(0)
@@ -209,6 +264,7 @@ async def send_position(update: Update, context: CallbackContext) -> None:
             continue
 
         image_stream = image_utils.create_position_image(
+            'binance',
             symbol,
             position['positionAmt'],
             position['entryPrice'],
@@ -226,6 +282,7 @@ async def send_position(update: Update, context: CallbackContext) -> None:
             continue
 
         image_stream = image_utils.create_position_image(
+            'bybit',
             symbol,
             position['positionAmt'],
             position['entryPrice'],
@@ -280,9 +337,6 @@ async def main():
     # init positions
     await update_binance_positions(binance_async_client)
     await update_bybit_positions(bybit_client)
-
-    a = bybit_client.get_closed_pnl(category="linear", settleCoin="USDT")
-    print(a)
 
     # run tg & watch positions
     await asyncio.gather(
